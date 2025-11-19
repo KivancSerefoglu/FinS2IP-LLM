@@ -623,7 +623,7 @@ class Dataset_Financial(Dataset):
     def __init__(self, root_path, flag='train', size=None,
              features='M', data_path='SPY_with_indicators.csv',
              target='Close', scale=True, timeenc=0, freq='d', 
-             indicator_cols=None, seasonal_patterns=None):
+             indicator_cols=None, seasonal_patterns=None, percent=100):
         # size [seq_len, label_len, pred_len]
         # init
         if size == None:
@@ -651,6 +651,7 @@ class Dataset_Financial(Dataset):
         else:
             self.indicator_cols = indicator_cols
 
+        self.percent = percent
         self.root_path = root_path
         self.data_path = data_path
         self.__read_data__()
@@ -673,6 +674,10 @@ class Dataset_Financial(Dataset):
         num_vali = len(df_raw) - num_train - num_test
         border1s = [0, num_train - self.seq_len, len(df_raw) - num_test - self.seq_len]
         border2s = [num_train, num_train + num_vali, len(df_raw)]
+        
+        if self.set_type == 0:
+            border2s[0] = (border2s[0] - self.seq_len) * self.percent // 100 + self.seq_len
+        
         border1 = border1s[self.set_type]
         border2 = border2s[self.set_type]
 
