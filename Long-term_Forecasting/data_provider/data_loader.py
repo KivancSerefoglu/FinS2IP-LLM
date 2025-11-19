@@ -704,7 +704,8 @@ class Dataset_Financial(Dataset):
             df_indicators = df_indicators.values
 
         df_stamp = df_raw[['Date']][border1:border2]
-        df_stamp['Date'] = pd.to_datetime(df_stamp.Date)
+        # Handle timezone-aware datetimes by converting to UTC then removing timezone
+        df_stamp['Date'] = pd.to_datetime(df_stamp.Date, utc=True).dt.tz_localize(None)
         if self.timeenc == 0:
             df_stamp['month'] = df_stamp.Date.apply(lambda row: row.month, 1)
             df_stamp['day'] = df_stamp.Date.apply(lambda row: row.day, 1)

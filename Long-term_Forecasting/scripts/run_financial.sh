@@ -3,10 +3,19 @@
 # This script runs the model for a single prediction length (96)
 # You can copy and paste this block, changing pred_len to 192, 336, etc.
 
+# Determine root path - works for both local and Colab
+if [ -d "/content" ]; then
+    # Running in Colab
+    ROOT_PATH="/content/FinS2IP-LLM/dataset/my_financial_data/"
+else
+    # Running locally
+    ROOT_PATH="../dataset/my_financial_data/"
+fi
+
 CUDA_VISIBLE_DEVICES=0 python -u run.py \
   --task_name long_term_forecast \
   --is_training 1 \
-  --root_path ./dataset/my_financial_data/ \
+  --root_path ${ROOT_PATH} \
   --data_path SPY_with_indicators.csv \
   --model_id SPY_512_96 \
   --model S2IPLLM \
