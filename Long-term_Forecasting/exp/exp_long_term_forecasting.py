@@ -9,9 +9,6 @@ from torch.nn.utils import clip_grad_norm_
 from utils.losses import mape_loss, mase_loss, smape_loss
 
 
-from transformers import AdamW
-
-
 
 
 
@@ -35,7 +32,13 @@ class Exp_Long_Term_Forecast(object):
             
         }
 
-        self.device = torch.device('cuda:0')
+        # Set device: prefer CUDA, then MPS (for Mac), then CPU
+        if torch.cuda.is_available():
+            self.device = torch.device('cuda:0')
+        elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
+            self.device = torch.device('mps')
+        else:
+            self.device = torch.device('cpu')
         self.model = self._build_model()
         
         self.train_data, self.train_loader = self._get_data(flag='train')
