@@ -45,6 +45,15 @@ if isinstance(data.index, pd.DatetimeIndex):
     if 'Date' not in data.columns and 'Datetime' in data.columns:
         data.rename(columns={'Datetime': 'Date'}, inplace=True)
 
+# Ensure Date column is timezone-naive (remove timezone info if present)
+if 'Date' in data.columns:
+    if data['Date'].dtype == 'object':
+        # Convert to datetime and remove timezone
+        data['Date'] = pd.to_datetime(data['Date'], utc=True).dt.tz_localize(None)
+    elif hasattr(data['Date'].dtype, 'tz') and data['Date'].dtype.tz is not None:
+        # Already datetime but timezone-aware, remove timezone
+        data['Date'] = data['Date'].dt.tz_localize(None)
+
 # Clean up data (remove rows with NaN values created by indicators)
 data = data.dropna()
 
