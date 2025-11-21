@@ -34,7 +34,7 @@ class Exp_Long_Term_Forecast(object):
 
         # Set device: prefer CUDA, then MPS (for Mac), then CPU
         if torch.cuda.is_available():
-        self.device = torch.device('cuda:0')
+            self.device = torch.device('cuda:0')
         elif hasattr(torch.backends, 'mps') and torch.backends.mps.is_available():
             self.device = torch.device('mps')
         else:
