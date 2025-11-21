@@ -79,6 +79,12 @@ class Exp_Long_Term_Forecast(object):
         with torch.no_grad():
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, *batch_indicators) in tqdm(enumerate(vali_loader)):
                 batch_x = batch_x.float().to(self.device)
+
+                indicator_tensor = None
+                if batch_indicators:
+                    indicator_tensor = batch_indicators[0].float().to(self.device)
+                if indicator_tensor is not None:
+                    batch_x = torch.cat([batch_x, indicator_tensor], dim=-1)
                 batch_y = batch_y.float().to(self.device)
 
                 batch_x_mark = batch_x_mark.float().to(self.device)
@@ -149,6 +155,12 @@ class Exp_Long_Term_Forecast(object):
                 iter_count += 1
                 self.optimizer.zero_grad()
                 batch_x = batch_x.float().to(self.device)
+
+                indicator_tensor = None
+                if batch_indicators:
+                    indicator_tensor = batch_indicators[0].float().to(self.device)
+                if indicator_tensor is not None:
+                    batch_x = torch.cat([batch_x, indicator_tensor], dim=-1)
 
                 batch_y = batch_y.float().to(self.device)
                 batch_x_mark = batch_x_mark.float().to(self.device)
@@ -254,6 +266,12 @@ class Exp_Long_Term_Forecast(object):
         with torch.no_grad():
             for i, (batch_x, batch_y, batch_x_mark, batch_y_mark, *batch_indicators) in tqdm(enumerate(test_loader)):
                 batch_x = batch_x.float().to(self.device)
+
+                indicator_tensor = None
+                if batch_indicators:
+                    indicator_tensor = batch_indicators[0].float().to(self.device)
+                if indicator_tensor is not None:
+                    batch_x = torch.cat([batch_x, indicator_tensor], dim=-1)
                 batch_y = batch_y.float().to(self.device)
 
                 batch_x_mark = batch_x_mark.float().to(self.device)
