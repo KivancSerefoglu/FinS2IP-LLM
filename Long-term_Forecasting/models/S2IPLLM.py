@@ -42,6 +42,16 @@ class Model(nn.Module):
         self.patch_num = (configs.seq_len - self.patch_size) // self.stride + 1
         self.padding_patch_layer = nn.ReplicationPad1d((0, self.stride)) 
         self.patch_num += 1
+        self.indicator_dim = max(getattr(self.configs, 'n_indicators', 0), 0)
+        self.component_dim = (2 + self.indicator_dim) if self.indicator_dim > 0 else 3
+        patch_len = getattr(configs, 'patch_len', self.patch_size)
+        self.patch_embedding = nn.Linear(patch_len * self.component_dim, configs.d_model)
+
+        if configs.d_model % self.component_dim != 0:
+            raise ValueError(
+                f"d_model ({configs.d_model}) must be divisible by component count ({self.component_dim})."
+            )
+        self.per_component_dim = configs.d_model // self.component_dim
        
 
         self.tokenizer = GPT2Tokenizer.from_pretrained('gpt2')
@@ -77,8 +87,10 @@ class Model(nn.Module):
 
         if self.task_name == 'long_term_forecast':
         
-            self.in_layer = nn.Linear(configs.patch_size*3, configs.d_model)
-            self.out_layer = nn.Linear(int(configs.d_model / 3 * (self.patch_num+configs.prompt_length)) , configs.pred_len)
+            self.out_layer = nn.Linear(
+                int(self.per_component_dim * (self.patch_num + configs.prompt_length)),
+                configs.pred_len
+            )
             
             self.prompt_pool = Prompt(length=1, embed_dim=768, embedding_key='mean', prompt_init='uniform', prompt_pool=False, 
                  prompt_key=True, pool_size=self.configs.pool_size, top_k=self.configs.prompt_length, batchwise_prompt=False, prompt_key_init=self.configs.prompt_init,wte = self.gpt2.wte.weight)
@@ -87,7 +99,7 @@ class Model(nn.Module):
             
    
             
-            for layer in (self.gpt2, self.in_layer, self.out_layer):       
+            for layer in (self.gpt2, self.patch_embedding, self.out_layer):       
                 layer.cuda()
                 layer.train()
 
@@ -110,6 +122,17 @@ class Model(nn.Module):
         
          
             
+        indicator_dim = self.indicator_dim
+        indicator_series = None
+        if indicator_dim > 0:
+            if x_enc.shape[-1] <= indicator_dim:
+                raise ValueError(
+                    "Input does not contain enough channels to extract indicator features. "
+                    "Ensure indicator variables are appended to the encoder input."
+                )
+            indicator_series = x_enc[:, :, -indicator_dim:]
+            x_enc = x_enc[:, :, :-indicator_dim]
+
         B, L, M = x_enc.shape
             
         means = x_enc.mean(1, keepdim=True).detach()
@@ -117,6 +140,11 @@ class Model(nn.Module):
         stdev = torch.sqrt(
         torch.var(x_enc, dim=1, keepdim=True, unbiased=False) + 1e-5)
         x_enc /= stdev
+        if indicator_series is not None:
+            indicator_series = indicator_series - indicator_series.mean(1, keepdim=True).detach()
+            indicator_series = indicator_series / (
+                torch.sqrt(torch.var(indicator_series, dim=1, keepdim=True, unbiased=False) + 1e-5)
+            )
  
         x = rearrange(x_enc, 'b l m -> (b m) l') 
 
@@ -135,10 +163,31 @@ class Model(nn.Module):
         decomp_results = np.apply_along_axis(decompose, 1, x.cpu().numpy())
         x = torch.tensor(decomp_results).to(self.gpt2.device)
         x = rearrange(x, 'b l c d  -> b c (d l)', c = 3)
-        x = self.padding_patch_layer(x)
-        x = x.unfold(dimension=-1, size=self.patch_size, step=self.stride)
-        x = rearrange(x, 'b c n p -> b n (c p)', c = 3)  
-        pre_prompted_embedding = self.in_layer(x.float())
+
+        trend_component = x[:, 0:1, :]
+        seasonal_component = x[:, 1:2, :]
+        residual_component = x[:, 2:3, :]
+
+        def patchify(component):
+            comp = self.padding_patch_layer(component)
+            comp = comp.unfold(dimension=-1, size=self.patch_size, step=self.stride)
+            comp = comp.permute(0, 2, 1, 3).contiguous()
+            comp = comp.view(comp.shape[0], comp.shape[1], -1)
+            return comp
+
+        trend_output = patchify(trend_component)
+        seasonal_output = patchify(seasonal_component)
+        residual_output = patchify(residual_component)
+
+        if indicator_dim > 0 and indicator_series is not None:
+            indicator_expanded = indicator_series.unsqueeze(1).repeat(1, M, 1, 1)
+            indicator_expanded = indicator_expanded.reshape(B * M, indicator_dim, L)
+            indicator_output = patchify(indicator_expanded)
+            final_output = torch.cat([seasonal_output, trend_output, indicator_output], dim=2)
+        else:
+            final_output = torch.cat([seasonal_output, trend_output, residual_output], dim=2)
+
+        pre_prompted_embedding = self.patch_embedding(final_output.float())
 
 
 
@@ -153,10 +202,10 @@ class Model(nn.Module):
                
 
         last_embedding = self.gpt2(inputs_embeds=prompted_embedding).last_hidden_state
-        outputs = self.out_layer(last_embedding.reshape(B*M*3, -1))
+        outputs = self.out_layer(last_embedding.reshape(B * M * self.component_dim, -1))
             
             
-        outputs = rearrange(outputs, '(b m c) h -> b m c h', b=B,m=M,c=3)
+        outputs = rearrange(outputs, '(b m c) h -> b m c h', b=B, m=M, c=self.component_dim)
         outputs = outputs.sum(dim=2)
         outputs = rearrange(outputs, 'b m l -> b l m')
 
